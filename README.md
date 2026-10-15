@@ -1,27 +1,32 @@
 # termux-imu-live
 
-Stream your Android phone's IMU (accelerometer, gyroscope) from [Termux](https://termux.dev) to a laptop and watch it live in the browser, including a **position estimate from double integration** that visibly drifts away even while the phone lies still.
-
-Built as a live demo for a university talk on VR input technologies: it shows why an IMU is great for orientation but practically useless for position on its own.
+Live visualization of a phone's IMU (accelerometer and gyroscope), including a **position estimate from double integration** that visibly drifts away even while the phone lies still. It is meant as a teaching demo for why an IMU alone is good for orientation but not for position.
 
 ![screenshot](screenshot.png)
 
-**No setup at all?** `web/index.html` is a browser-only version: open it on your phone over HTTPS (live at https://imudemo.puchstein.lu) and it reads the phone's own motion sensors via the DeviceMotion API. Nothing is sent anywhere.
+Two ways to run it:
 
-## What you see
+| | Browser-only (`web/`) | Termux stream (`imu_server.py`) |
+|---|---|---|
+| Sensors read by | the phone's browser (DeviceMotion API) | Termux:API on the phone |
+| Shown on | the phone itself | a laptop or projector browser |
+| Needs | any static host with HTTPS | Python 3 on the laptop, Termux + Termux:API on the phone |
 
-- **Beschleunigung** (acceleration, m/s², incl. gravity), x/y/z over the last 10 s
-- **Drehrate** (gyroscope, rad/s), x/y/z over the last 10 s
-- **Position aus Doppelintegration**: linear acceleration integrated twice, top view; the distance from the start grows with every second
+## Views
 
-The UI labels are German (the talk was in German).
+- **Acceleration** (m/s², incl. gravity), x/y/z over the last 10 s
+- **Rotation rate** (gyroscope), x/y/z over the last 10 s
+- **Position from double integration**: linear acceleration integrated twice, top view, with the distance from the start
 
-## Requirements
+The UI labels are in German.
 
-- **Phone:** Termux plus the [Termux:API](https://wiki.termux.com/wiki/Termux:API) app, and `pkg install termux-api`
-- **Laptop:** Python 3 (standard library only), any browser
+## Browser-only version
 
-## Usage
+`web/index.html` is a single self-contained file without external assets. Serve it from any static host **over HTTPS**, since browsers expose motion sensors only in a secure context. Open it on a phone and tap the start button (iOS asks for permission). No data leaves the device.
+
+If the host sends a `Permissions-Policy` header, it must allow `accelerometer` and `gyroscope` for `self`.
+
+## Termux stream to a laptop
 
 On the laptop:
 
@@ -30,35 +35,34 @@ python3 imu_server.py
 # open http://localhost:8000
 ```
 
-On the phone (Termux), with the laptop's IP address:
+On the phone (Termux with the [Termux:API](https://wiki.termux.com/wiki/Termux:API) app and `pkg install termux-api`):
 
 ```sh
 bash -c 'termux-sensor -s "Accelerometer,Gyroscope,Linear" -d 20 > /dev/tcp/LAPTOP-IP/9000'
 ```
 
-`/dev/tcp` is a bash feature, hence the `bash -c` when your Termux shell is zsh or fish.
+`/dev/tcp` is a bash feature, hence `bash -c` if your shell is zsh or fish.
 
-**No shared network?** Use a USB cable and adb instead (USB debugging on):
+On networks that block device-to-device traffic, use a USB cable instead (USB debugging enabled):
 
 ```sh
 adb reverse tcp:9000 tcp:9000
-# then on the phone use 127.0.0.1 as LAPTOP-IP
+# then use 127.0.0.1 as LAPTOP-IP on the phone
 ```
 
-A VPN like Tailscale also works on networks that isolate clients.
+A mesh VPN works as well.
 
-Keys in the browser: `R` resets the integrated position, `Space` pauses.
-Without a phone, `http://localhost:8000/?test` shows synthetic data.
+Browser keys: `R` resets the integrated position, `Space` pauses. `http://localhost:8000/?test` shows synthetic data without a phone.
 
 ## How it works
 
-`termux-sensor` prints pretty-printed JSON objects (`{"<sensor name>": {"values": [x, y, z]}, ...}`). The server accepts that stream on TCP port 9000, splits it into complete objects by counting braces, and forwards each one to the browser as a Server-Sent Event. The page sorts sensors by name (`accel`, `gyro`, `linear`), plots them on canvases and integrates the linear acceleration twice. If the phone has no linear-acceleration sensor, gravity is estimated with a low-pass filter and subtracted.
+`termux-sensor` prints pretty-printed JSON objects (`{"<sensor name>": {"values": [x, y, z]}, ...}`). The server accepts this stream on TCP port 9000, splits it into complete objects by counting braces and forwards each one to the browser as a Server-Sent Event. The page classifies sensors by name (`accel`, `gyro`, `linear`), plots them on canvases and integrates the linear acceleration twice. Without a linear-acceleration sensor, gravity is estimated with a low-pass filter and subtracted.
 
-`python3 imu_server.py --selftest` checks the stream parser.
+Only the Python standard library is used. `python3 imu_server.py --selftest` checks the stream parser.
 
 ## AI disclosure
 
-This project was co-authored by [Claude Opus 5.5](https://www.anthropic.com/claude) (Anthropic): the code, the browser version and this README were written with Claude, then tested on a real phone and published by Matthias Puchstein.
+This project was co-authored with Claude Opus 5.5 (Anthropic).
 
 ## License
 
