@@ -64,7 +64,7 @@ Only the Python standard library is used. `python3 imu_server.py --selftest` che
 
 ## AI disclosure
 
-This project was co-authored with Claude Opus 5.5 (Anthropic): the code, the browser version and this README were written with Claude, then tested on a real phone and published by Matthias Puchstein.
+This project was co-authored with Claude Opus 5.5 (Anthropic): the code, the browser version and this README were written with Claude, then reviewed, tested on a real phone and published by Matthias Puchstein.
 
 ## License
 
