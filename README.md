@@ -56,6 +56,10 @@ Without a phone, `http://localhost:8000/?test` shows synthetic data.
 
 `python3 imu_server.py --selftest` checks the stream parser.
 
+## AI disclosure
+
+This project was co-authored by [Claude Opus 5.5](https://www.anthropic.com/claude) (Anthropic): the code, the browser version and this README were written with Claude, then tested on a real phone and published by Matthias Puchstein.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
