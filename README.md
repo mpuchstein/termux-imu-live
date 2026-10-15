@@ -1,6 +1,8 @@
 # termux-imu-live
 
-Live visualization of a phone's IMU (accelerometer and gyroscope), including a **position estimate from double integration** that visibly drifts away even while the phone lies still. It is meant as a teaching demo for why an IMU alone is good for orientation but not for position.
+Live visualization of a phone's IMU (accelerometer and gyroscope), including a **position estimate from double integration** that visibly drifts away even while the phone lies still. It is meant as a teaching demo for why an IMU alone is good for orientation but not for position. It was built as a live demo for a university talk on input technologies in virtual reality.
+
+**Try it on your phone:** https://imudemo.puchstein.lu
 
 ![screenshot](screenshot.png)
 
@@ -18,11 +20,11 @@ Two ways to run it:
 - **Rotation rate** (gyroscope), x/y/z over the last 10 s
 - **Position from double integration**: linear acceleration integrated twice, top view, with the distance from the start
 
-The UI labels are in German.
+The UI labels are in German, like the talk.
 
 ## Browser-only version
 
-`web/index.html` is a single self-contained file without external assets. Serve it from any static host **over HTTPS**, since browsers expose motion sensors only in a secure context. Open it on a phone and tap the start button (iOS asks for permission). No data leaves the device.
+`web/index.html` is a single self-contained file without external assets. A hosted copy runs at https://imudemo.puchstein.lu. To host it yourself, serve it from any static host **over HTTPS**, since browsers expose motion sensors only in a secure context. Open it on a phone and tap the start button (iOS asks for permission). No data leaves the device.
 
 If the host sends a `Permissions-Policy` header, it must allow `accelerometer` and `gyroscope` for `self`.
 
@@ -62,7 +64,7 @@ Only the Python standard library is used. `python3 imu_server.py --selftest` che
 
 ## AI disclosure
 
-This project was co-authored with Claude Opus 5.5 (Anthropic).
+This project was co-authored with Claude Opus 5.5 (Anthropic): the code, the browser version and this README were written with Claude, then tested on a real phone and published by Matthias Puchstein.
 
 ## License
 
