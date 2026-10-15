@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IMU live</title>
+<meta name="description" content="Die IMU des eigenen Handys live: Beschleunigung, Drehrate und eine Position aus Doppelintegration, die sichtbar wegdriftet.">
+<style>
+:root { --bg: #fff; --fg: #1a1a2e; --muted: #6b7080; --line: #e3e6ea; --blue: #0079c3; --red: #c0392b;
+        --x: #c0392b; --y: #1e8e3e; --z: #0079c3; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14161a; --fg: #e8eaed; --muted: #9aa0a6; --line: #30343b; --blue: #2b8fd6; --red: #e5675a;
+          --x: #e5675a; --y: #4cc36a; --z: #4aa8e8; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+  font: 16px/1.35 "Noto Sans", "DejaVu Sans", "Segoe UI", Roboto, Arial, sans-serif; }
+header { min-height: 52px; background: var(--blue); color: #fff; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 16px; padding: 8px 16px; }
+header h1 { font-size: 22px; margin: 0; font-weight: 600; }
+header .status { opacity: .9; font-size: 15px; }
+header .spacer { flex: 1; }
+header button { font: inherit; font-size: 15px; color: #fff; background: transparent; border: 1px solid #fff8;
+  border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+main { height: calc(100% - 52px); display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  gap: 10px; padding: 10px 16px 16px; }
+.panel { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+.panel h2 { font-size: 18px; margin: 8px 12px 0; }
+.panel .sub { font-size: 13px; color: var(--muted); margin: 0 12px; }
+.panel canvas { flex: 1; width: 100%; min-height: 0; }
+#posPanel { grid-row: 1 / 3; grid-column: 2; }
+.legend span { font-weight: 700; margin-right: 8px; }
+#drift { font-size: 22px; font-weight: 700; color: var(--red); margin: 4px 12px 10px; }
+@media (max-width: 760px) {
+  main { height: auto; grid-template-columns: 1fr; grid-template-rows: none; }
+  .panel { height: 240px; }
+  #posPanel { grid-row: auto; grid-column: auto; height: 380px; }
+}
+#start { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 94%, transparent); display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; z-index: 5; }
+#start h2 { margin: 0; font-size: 26px; }
+#start p { margin: 0; max-width: 34em; color: var(--muted); }
+#start button { font: inherit; font-size: 20px; color: #fff; background: var(--blue); border: 0; border-radius: 10px;
+  padding: 14px 32px; cursor: pointer; }
+#start .err { color: var(--red); font-weight: 600; }
+footer { font-size: 12px; color: var(--muted); text-align: center; padding: 0 16px 12px; }
+footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IMU live</h1>
+  <span class="status" id="status">gestoppt</span>
+  <span class="spacer"></span>
+  <button id="reset" type="button">Position zurücksetzen</button>
+</header>
+<main>
+  <section class="panel">
+    <h2>Beschleunigung</h2>
+    <p class="sub legend">m/s² · <span style="color:var(--x)">x</span><span style="color:var(--y)">y</span><span style="color:var(--z)">z</span> (inkl. Schwerkraft)</p>
+    <canvas id="acc"></canvas>
+  </section>
+  <section class="panel">
+    <h2>Drehrate (Gyroskop)</h2>
+    <p class="sub legend">°/s · <span style="color:var(--x)">x</span><span style="color:var(--y)">y</span><span style="color:var(--z)">z</span></p>
+    <canvas id="gyr"></canvas>
+  </section>
+  <section class="panel" id="posPanel">
+    <h2>Position aus Doppelintegration</h2>
+    <p class="sub">Beschleunigung ohne Schwerkraft, zweimal aufsummiert · Draufsicht x/y</p>
+    <canvas id="pos"></canvas>
+    <div id="drift">–</div>
+  </section>
+</main>
+<footer>Läuft komplett im Browser, es werden keine Daten gesendet ·
+  <a href="https://github.com/mpuchstein/termux-imu-live">Quellcode (MIT)</a></footer>
+
+<div id="start">
+  <h2>Die IMU deines Handys, live</h2>
+  <p>Schwenk das Handy und sieh Beschleunigung und Drehrate. Dann leg es hin: die aus der Beschleunigung
+     berechnete Position läuft trotzdem weg. Das ist Drift.</p>
+  <button id="go" type="button">Sensoren starten</button>
+  <p class="err" id="err"></p>
+</div>
+
+<script>
+const WINDOW_S = 10;
+const hist = { acc: [], gyr: [] };          // [t, x, y, z]
+let p = [0, 0, 0], v = [0, 0, 0], tLast = null, t0 = null, trail = [], gravity = null;
+const now = () => performance.now() / 1000;
+const $ = id => document.getElementById(id);
+
+function onMotion(e) {
+  const t = now();
+  const ag = e.accelerationIncludingGravity, a = e.acceleration, r = e.rotationRate;
+  if (ag && ag.x !== null) {
+    const g3 = [ag.x, ag.y, ag.z];
+    hist.acc.push([t, ...g3]);
+    gravity = gravity ? gravity.map((g, i) => 0.95 * g + 0.05 * g3[i]) : g3;
+  }
+  if (r && r.alpha !== null) hist.gyr.push([t, r.beta, r.gamma, r.alpha]);  // Drehung um x, y, z
+  let lin = a && a.x !== null ? [a.x, a.y, a.z] : null;
+  if (!lin && ag && ag.x !== null) lin = [ag.x, ag.y, ag.z].map((x, i) => x - gravity[i]);
+  for (const k in hist) while (hist[k].length && hist[k][0][0] < t - WINDOW_S) hist[k].shift();
+  if (lin) integrate(lin, t);
+  if (!onMotion.seen) { onMotion.seen = true; $("status").textContent = "live"; }
+}
+
+function integrate(a, t) {
+  if (tLast === null) { tLast = t; t0 = t; return; }
+  const dt = Math.min(t - tLast, 0.2); tLast = t;
+  for (let i = 0; i < 3; i++) { v[i] += a[i] * dt; p[i] += v[i] * dt; }
+  trail.push([p[0], p[1]]);
+  if (trail.length > 5000) trail.shift();
+}
+
+function reset() { p = [0, 0, 0]; v = [0, 0, 0]; tLast = null; t0 = null; trail = []; }
+
+function fit(c) {
+  const r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) {
+    c.width = Math.round(r.width * d); c.height = Math.round(r.height * d);
+  }
+  const g = c.getContext("2d"); g.setTransform(d, 0, 0, d, 0, 0);
+  return [g, r.width, r.height];
+}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function drawSeries(id, data, range) {
+  const [g, w, h] = fit($(id));
+  g.clearRect(0, 0, w, h);
+  const pad = 40, y0 = h / 2, sy = (h / 2 - 12) / range, t1 = now();
+  g.strokeStyle = css("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(pad, y0); g.lineTo(w - 8, y0); g.stroke();
+  g.fillStyle = css("--muted"); g.font = "12px sans-serif";
+  g.fillText("+" + range, 4, 16); g.fillText("−" + range, 4, h - 6); g.fillText("0", 4, y0 + 4);
+  ["--x", "--y", "--z"].forEach((col, i) => {
+    g.strokeStyle = css(col); g.lineWidth = 2.5; g.beginPath();
+    data.forEach(([t, ...vals], j) => {
+      const x = pad + (w - pad - 8) * (1 - (t1 - t) / WINDOW_S);
+      const y = y0 - Math.max(-range, Math.min(range, vals[i])) * sy;
+      j ? g.lineTo(x, y) : g.moveTo(x, y);
+    });
+    g.stroke();
+  });
+}
+
+function drawPos() {
+  const [g, w, h] = fit($("pos"));
+  g.clearRect(0, 0, w, h);
+  const far = trail.reduce((m, [x, y]) => Math.max(m, Math.abs(x), Math.abs(y)), 0.25);
+  const s = (Math.min(w, h) / 2 - 24) / (far * 1.1), cx = w / 2, cy = h / 2;
+  g.strokeStyle = css("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(cx, 8); g.lineTo(cx, h - 8); g.moveTo(8, cy); g.lineTo(w - 8, cy); g.stroke();
+  g.fillStyle = css("--muted"); g.font = "13px sans-serif";
+  g.fillText("Maßstab: " + (far * 1.1).toFixed(2).replace(".", ",") + " m bis zum Rand", 10, h - 10);
+  g.strokeStyle = css("--red"); g.lineWidth = 3; g.beginPath();
+  trail.forEach(([x, y], j) => j ? g.lineTo(cx + x * s, cy - y * s) : g.moveTo(cx + x * s, cy - y * s));
+  g.stroke();
+  g.fillStyle = css("--blue"); g.beginPath(); g.arc(cx, cy, 6, 0, 7); g.fill();
+  if (trail.length) {
+    const [x, y] = trail[trail.length - 1];
+    g.fillStyle = css("--red"); g.beginPath(); g.arc(cx + x * s, cy - y * s, 7, 0, 7); g.fill();
+  }
+  const d = Math.hypot(p[0], p[1], p[2]), secs = t0 === null ? 0 : tLast - t0;
+  $("drift").textContent = `Abweichung vom Start: ${d.toFixed(2).replace(".", ",")} m nach ${secs.toFixed(0)} s`;
+}
+
+function frame() {
+  drawSeries("acc", hist.acc, 20);
+  drawSeries("gyr", hist.gyr, 360);
+  drawPos();
+  requestAnimationFrame(frame);
+}
+
+async function start() {
+  try {
+    if (typeof DeviceMotionEvent === "undefined") throw new Error("Dieser Browser liefert keine Bewegungssensoren.");
+    if (typeof DeviceMotionEvent.requestPermission === "function") {   // iOS fragt nach
+      if (await DeviceMotionEvent.requestPermission() !== "granted") throw new Error("Zugriff auf die Sensoren wurde abgelehnt.");
+    }
+    addEventListener("devicemotion", onMotion);
+    $("start").style.display = "none";
+    $("status").textContent = "warte auf Sensordaten …";
+    setTimeout(() => { if (!onMotion.seen) $("status").textContent = "keine Sensordaten (Desktop? Dann am Handy öffnen)"; }, 2000);
+  } catch (e) {
+    $("err").textContent = e.message;
+  }
+}
+
+$("go").addEventListener("click", start);
+$("reset").addEventListener("click", reset);
+addEventListener("keydown", e => { if (e.key === "r" || e.key === "R") reset(); });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

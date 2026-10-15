@@ -6,6 +6,8 @@ Built as a live demo for a university talk on VR input technologies: it shows wh
 
 ![screenshot](screenshot.png)
 
+**No setup at all?** `web/index.html` is a browser-only version: open it on your phone over HTTPS (live at https://imudemo.puchstein.lu) and it reads the phone's own motion sensors via the DeviceMotion API. Nothing is sent anywhere.
+
 ## What you see
 
 - **Beschleunigung** (acceleration, m/s², incl. gravity), x/y/z over the last 10 s
